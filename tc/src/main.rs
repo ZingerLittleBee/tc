@@ -16,6 +16,7 @@ use crate::web_api::{start_web_server, AppState};
 use crate::target_ip::{get_target_ip, TargetIp};
 
 mod analytics;
+mod serializable_types;
 mod storage;
 mod target_ip;
 mod utils;

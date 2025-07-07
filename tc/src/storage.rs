@@ -4,27 +4,30 @@ use rocksdb::{DBCompressionType, IteratorMode, Options, WriteBatch, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tc_common::{EnhancedTrafficStats, FlowKey, PortStats, ProtocolStats};
+use crate::serializable_types::{
+    SerializableEnhancedTrafficStats, SerializableFlowKey, SerializablePortStats, SerializableProtocolStats
+};
 
 // 时序数据记录
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FlowRecord {
     pub timestamp: DateTime<Utc>,
-    pub flow_key: FlowKey,
-    pub stats: EnhancedTrafficStats,
+    pub flow_key: SerializableFlowKey,
+    pub stats: SerializableEnhancedTrafficStats,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProtocolRecord {
     pub timestamp: DateTime<Utc>,
     pub ip: u32,
-    pub stats: ProtocolStats,
+    pub stats: SerializableProtocolStats,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PortRecord {
     pub timestamp: DateTime<Utc>,
     pub port: u16,
-    pub stats: PortStats,
+    pub stats: SerializablePortStats,
 }
 
 // 存储层主要结构
@@ -69,8 +72,8 @@ impl TrafficStorage {
         for (flow_key, stats) in flows {
             let record = FlowRecord {
                 timestamp,
-                flow_key: *flow_key,
-                stats: *stats,
+                flow_key: (*flow_key).into(),
+                stats: (*stats).into(),
             };
 
             let key = format!(
@@ -100,7 +103,7 @@ impl TrafficStorage {
             let record = ProtocolRecord {
                 timestamp,
                 ip: *ip,
-                stats: *stats,
+                stats: (*stats).into(),
             };
 
             let key = format!("protocol:{:010}:{}", ts, ip);
@@ -117,7 +120,7 @@ impl TrafficStorage {
             let record = PortRecord {
                 timestamp,
                 port: *port,
-                stats: *stats,
+                stats: (*stats).into(),
             };
 
             let key = format!("port_stats:{:010}:{}", ts, port);
@@ -152,7 +155,7 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with(&prefix) || key_str > end_key {
+            if !key_str.starts_with(&prefix) || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
@@ -176,7 +179,7 @@ impl TrafficStorage {
         let start_key = format!("port_stats:{:010}:", start_ts);
         let end_key = format!("port_stats:{:010}:", end_ts);
 
-        let mut port_aggregates: HashMap<u16, PortStats> = HashMap::new();
+        let mut port_aggregates: HashMap<u16, SerializablePortStats> = HashMap::new();
         let iter = self.db.iterator(IteratorMode::From(
             start_key.as_bytes(),
             rocksdb::Direction::Forward,
@@ -186,14 +189,14 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with("port_stats:") || key_str > end_key {
+            if !key_str.starts_with("port_stats:") || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
             if let Ok(record) = bincode::deserialize::<PortRecord>(&value) {
                 let entry = port_aggregates
                     .entry(record.port)
-                    .or_insert_with(|| PortStats::new(record.port, record.stats.protocol));
+                    .or_insert_with(|| SerializablePortStats::new(record.port, record.stats.protocol));
 
                 entry.total_bytes += record.stats.total_bytes;
                 entry.total_packets += record.stats.total_packets;
@@ -241,7 +244,7 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with(&prefix) || key_str > end_key {
+            if !key_str.starts_with(&prefix) || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
@@ -288,7 +291,7 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with("flow:") || key_str > end_key {
+            if !key_str.starts_with("flow:") || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
@@ -321,7 +324,7 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with("protocol:") || key_str > end_key {
+            if !key_str.starts_with("protocol:") || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
@@ -354,7 +357,7 @@ impl TrafficStorage {
             let (key, value) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if !key_str.starts_with("port_stats:") || key_str > end_key {
+            if !key_str.starts_with("port_stats:") || key_str.as_ref() > end_key.as_str() {
                 break;
             }
 
@@ -371,6 +374,8 @@ impl TrafficStorage {
         let mut batch = WriteBatch::default();
         let before_ts = before.timestamp();
         let end_key = format!("flow:{:010}:", before_ts);
+        let protocol_end_key = format!("protocol:{:010}:", before_ts);
+        let port_end_key = format!("port_stats:{:010}:", before_ts);
 
         let mut deleted_count = 0;
 
@@ -380,16 +385,16 @@ impl TrafficStorage {
             let (key, _) = item?;
             let key_str = String::from_utf8_lossy(&key);
 
-            if key_str.starts_with("flow:") && key_str <= end_key {
+            if key_str.starts_with("flow:") && key_str.as_ref() <= end_key.as_str() {
                 batch.delete(&key);
                 deleted_count += 1;
             } else if key_str.starts_with("protocol:")
-                && key_str <= format!("protocol:{:010}:", before_ts)
+                && key_str.as_ref() <= protocol_end_key.as_str()
             {
                 batch.delete(&key);
                 deleted_count += 1;
             } else if key_str.starts_with("port_stats:")
-                && key_str <= format!("port_stats:{:010}:", before_ts)
+                && key_str.as_ref() <= port_end_key.as_str()
             {
                 batch.delete(&key);
                 deleted_count += 1;

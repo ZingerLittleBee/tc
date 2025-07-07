@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
-use crate::analytics::{DashboardData, TrafficAnalyzer};
+use crate::analytics::DashboardData;
 use crate::storage::{FlowRecord, PortRecord, ProtocolRecord, TrafficStorage};
 
 // API 响应结构

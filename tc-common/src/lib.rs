@@ -10,7 +10,7 @@ pub struct PacketLog {
 }
 
 #[cfg(feature = "user")]
-unsafe impl aya::Pod for PacketLog {} // (1)
+unsafe impl aya::Pod for PacketLog {}
 
 // 流量统计结构，与eBPF程序中的结构保持一致
 #[repr(C)]
@@ -44,7 +44,7 @@ impl TrafficStats {
     }
 }
 
-// === 新增：多维度监控数据结构 ===
+// === 多维度监控数据结构 ===
 
 // 网络流唯一标识键
 #[repr(C)]
