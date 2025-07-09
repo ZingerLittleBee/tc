@@ -60,7 +60,7 @@ pub struct FlowKey {
 unsafe impl aya::Pod for FlowKey {}
 
 // 增强的流量统计结构
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Clone, Copy, Debug)]
 pub struct EnhancedTrafficStats {
     pub inbound_packets: u64,
@@ -70,7 +70,7 @@ pub struct EnhancedTrafficStats {
     pub protocol: u8,          // 协议类型
     pub last_seen: u64,        // 最后活跃时间（纳秒时间戳）
     pub connection_count: u32, // 连接数（对于相同 IP+Port 的统计）
-    pub _padding: u32,         // 对齐填充
+    pub _padding: [u8; 3],     // 对齐填充，调整为字节数组
 }
 
 #[cfg(feature = "user")]
@@ -86,7 +86,7 @@ impl EnhancedTrafficStats {
             protocol,
             last_seen: 0,
             connection_count: 0,
-            _padding: 0,
+            _padding: [0; 3],
         }
     }
 

@@ -205,14 +205,14 @@ async fn main() -> Result<(), anyhow::Error> {
         HashMap::try_from(bpf.map("PORT_STATS").unwrap())?;
 
     // 保留原有的简单统计map（用于向后兼容）
-    let traffic_map: HashMap<_, u32, TrafficStats> =
-        HashMap::try_from(bpf.map("TRAFFIC_STATS").unwrap())
-            .ok()
-            .unwrap_or_else(|| {
-                warn!("TRAFFIC_STATS map 不存在，仅使用增强统计功能");
-                // 创建一个空的map作为占位符，但实际不会使用
-                HashMap::try_from(bpf.map("TARGET_IP").unwrap()).unwrap()
-            });
+    // let traffic_map: HashMap<_, u32, TrafficStats> =
+    //     HashMap::try_from(bpf.map("TRAFFIC_STATS").unwrap())
+    //         .ok()
+    //         .unwrap_or_else(|| {
+    //             warn!("TRAFFIC_STATS map 不存在，仅使用增强统计功能");
+    //             // 创建一个空的map作为占位符，但实际不会使用
+    //             HashMap::try_from(bpf.map("TARGET_IP").unwrap()).unwrap()
+    //         });
 
     // 初始化存储和分析器
     let storage = TrafficStorage::new("./traffic_data").context("初始化RocksDB存储失败")?;

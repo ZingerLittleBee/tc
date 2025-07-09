@@ -68,7 +68,7 @@ impl Into<EnhancedTrafficStats> for SerializableEnhancedTrafficStats {
             protocol: self.protocol,
             last_seen: self.last_seen,
             connection_count: self.connection_count,
-            _padding: 0,
+            _padding: [0; 3],
         }
     }
 }

@@ -13,3 +13,5 @@ Cargo.lock
 **/*.rs.bk
 
 .env
+
+traffic_data/
