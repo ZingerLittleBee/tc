@@ -6,16 +6,20 @@ use clap::Parser;
 use log::{debug, info, warn, LevelFilter};
 use std::env;
 use std::time::Duration;
-use tc_common::{EnhancedTrafficStats, FlowKey, PortStats, ProtocolStats, TrafficStats};
+use tc_common::{EnhancedTrafficStats, FlowKey, PortStats, ProtocolStats};
 use tokio::signal;
 
 use crate::analytics::TrafficAnalyzer;
+use crate::listener_config::ListenerConfig;
 use crate::storage::TrafficStorage;
 use crate::web_api::{start_web_server, AppState};
 
-use crate::target_ip::{get_target_ip, TargetIp};
+use crate::target_ip::get_target_ip;
+
+// 移除同步函数，我们将在主循环中直接处理
 
 mod analytics;
+mod listener_config;
 mod serializable_types;
 mod storage;
 mod target_ip;
@@ -218,8 +222,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let storage = TrafficStorage::new("./traffic_data").context("初始化RocksDB存储失败")?;
     let mut analyzer = TrafficAnalyzer::new();
 
+    // 初始化监听配置管理器
+    let target_ips_u32: Vec<u32> = target_ip.iter().map(|ip| ip.0).collect();
+    let listener_config = ListenerConfig::from_target_ips(opt.iface.clone(), target_ips_u32).await;
+
     // 初始化 Web API 状态
-    let api_state = AppState::new(storage);
+    let api_state = AppState::new(storage, listener_config);
 
     info!("已初始化数据存储和分析器");
 
@@ -282,6 +290,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 ).await {
                     warn!("存储数据时出错: {}", e);
                 }
+
+                // 注意：监听配置的同步将在未来版本中实现
+                // 当前版本中，监听配置更改需要重启服务器才能生效
             }
             _ = signal::ctrl_c() => {
                 info!("收到 Ctrl-C 信号，正在退出...");

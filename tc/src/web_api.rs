@@ -2,7 +2,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::Json,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -13,6 +13,11 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 use crate::analytics::DashboardData;
+use crate::listener_config::{
+    AddListenerIpRequest, AddListenerPortRequest, ListenerConfig, ListenerConfigResponse,
+    ListenerOperationResult, RemoveListenerIpRequest, RemoveListenerPortRequest,
+    validate_ip_address, validate_port,
+};
 use crate::storage::{FlowRecord, PortRecord, ProtocolRecord, TrafficStorage};
 
 // API 响应结构
@@ -71,13 +76,15 @@ pub struct TopPortsQuery {
 pub struct AppState {
     pub storage: Arc<TrafficStorage>,
     pub latest_dashboard_data: Arc<RwLock<Option<DashboardData>>>,
+    pub listener_config: Arc<ListenerConfig>,
 }
 
 impl AppState {
-    pub fn new(storage: TrafficStorage) -> Self {
+    pub fn new(storage: TrafficStorage, listener_config: ListenerConfig) -> Self {
         Self {
             storage: Arc::new(storage),
             latest_dashboard_data: Arc::new(RwLock::new(None)),
+            listener_config: Arc::new(listener_config),
         }
     }
 
@@ -214,6 +221,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/ip/history", get(get_ip_history))
         .route("/api/ip/protocols", get(get_ip_protocols))
         .route("/api/ports/top", get(get_top_ports))
+        // 监听配置接口
+        .route("/api/listeners", get(get_listeners))
+        .route("/api/listeners/ip", post(add_listener_ip))
+        .route("/api/listeners/ip/remove", post(remove_listener_ip))
+        .route("/api/listeners/port", post(add_listener_port))
+        .route("/api/listeners/port/remove", post(remove_listener_port))
         // 健康检查
         .route("/health", get(health_check))
         // 启用 CORS
@@ -228,6 +241,92 @@ pub async fn health_check() -> Json<ApiResponse<HashMap<String, String>>> {
     health.insert("service".to_string(), "tc-network-monitor".to_string());
 
     Json(ApiResponse::success(health))
+}
+
+// === 监听配置 API 处理函数 ===
+
+/// 获取当前监听配置
+pub async fn get_listeners(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<ListenerConfigResponse>>, StatusCode> {
+    let config = state.listener_config.get_config().await;
+    Ok(Json(ApiResponse::success(config)))
+}
+
+/// 添加监听 IP 地址
+pub async fn add_listener_ip(
+    State(state): State<AppState>,
+    Json(request): Json<AddListenerIpRequest>,
+) -> Result<Json<ApiResponse<ListenerOperationResult>>, StatusCode> {
+    // 输入验证
+    if let Err(e) = validate_ip_address(&request.ip) {
+        return Ok(Json(ApiResponse::error(e.to_string())));
+    }
+
+    match state.listener_config.add_listen_ip(&request.ip).await {
+        Ok(result) => Ok(Json(ApiResponse::success(result))),
+        Err(e) => {
+            eprintln!("添加监听 IP 错误: {}", e);
+            Ok(Json(ApiResponse::error(format!("添加监听 IP 失败: {}", e))))
+        }
+    }
+}
+
+/// 移除监听 IP 地址
+pub async fn remove_listener_ip(
+    State(state): State<AppState>,
+    Json(request): Json<RemoveListenerIpRequest>,
+) -> Result<Json<ApiResponse<ListenerOperationResult>>, StatusCode> {
+    // 输入验证
+    if let Err(e) = validate_ip_address(&request.ip) {
+        return Ok(Json(ApiResponse::error(e.to_string())));
+    }
+
+    match state.listener_config.remove_listen_ip(&request.ip).await {
+        Ok(result) => Ok(Json(ApiResponse::success(result))),
+        Err(e) => {
+            eprintln!("移除监听 IP 错误: {}", e);
+            Ok(Json(ApiResponse::error(format!("移除监听 IP 失败: {}", e))))
+        }
+    }
+}
+
+/// 添加监听端口
+pub async fn add_listener_port(
+    State(state): State<AppState>,
+    Json(request): Json<AddListenerPortRequest>,
+) -> Result<Json<ApiResponse<ListenerOperationResult>>, StatusCode> {
+    // 输入验证
+    if let Err(e) = validate_port(request.port) {
+        return Ok(Json(ApiResponse::error(e.to_string())));
+    }
+
+    match state.listener_config.add_listen_port(request.port).await {
+        Ok(result) => Ok(Json(ApiResponse::success(result))),
+        Err(e) => {
+            eprintln!("添加监听端口错误: {}", e);
+            Ok(Json(ApiResponse::error(format!("添加监听端口失败: {}", e))))
+        }
+    }
+}
+
+/// 移除监听端口
+pub async fn remove_listener_port(
+    State(state): State<AppState>,
+    Json(request): Json<RemoveListenerPortRequest>,
+) -> Result<Json<ApiResponse<ListenerOperationResult>>, StatusCode> {
+    // 输入验证
+    if let Err(e) = validate_port(request.port) {
+        return Ok(Json(ApiResponse::error(e.to_string())));
+    }
+
+    match state.listener_config.remove_listen_port(request.port).await {
+        Ok(result) => Ok(Json(ApiResponse::success(result))),
+        Err(e) => {
+            eprintln!("移除监听端口错误: {}", e);
+            Ok(Json(ApiResponse::error(format!("移除监听端口失败: {}", e))))
+        }
+    }
 }
 
 // 辅助函数
@@ -267,6 +366,7 @@ pub async fn start_web_server(
         "📊 访问 http://localhost:{}/api/dashboard 查看实时数据",
         port
     );
+    println!("⚙️  访问 http://localhost:{}/api/listeners 查看监听配置", port);
     println!("❤️  访问 http://localhost:{}/health 进行健康检查", port);
 
     axum::serve(listener, app).await?;
