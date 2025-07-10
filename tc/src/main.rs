@@ -19,6 +19,7 @@ use crate::target_ip::get_target_ip;
 // 移除同步函数，我们将在主循环中直接处理
 
 mod analytics;
+mod docs;
 mod listener_config;
 mod serializable_types;
 mod storage;

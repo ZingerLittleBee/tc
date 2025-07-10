@@ -11,8 +11,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::analytics::DashboardData;
+use crate::docs::ApiDoc;
 use crate::listener_config::{
     AddListenerIpRequest, AddListenerPortRequest, ListenerConfig, ListenerConfigResponse,
     ListenerOperationResult, RemoveListenerIpRequest, RemoveListenerPortRequest,
@@ -97,6 +100,11 @@ impl AppState {
 // API 路由处理器
 
 /// 获取实时仪表板数据
+#[utoipa::path(
+    get,
+    path = "/api/dashboard",
+    tag = "dashboard"
+)]
 pub async fn get_dashboard(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<DashboardData>>, StatusCode> {
@@ -184,6 +192,11 @@ pub async fn get_ip_protocols(
 }
 
 /// 获取系统状态信息
+#[utoipa::path(
+    get,
+    path = "/api/status",
+    tag = "system"
+)]
 pub async fn get_system_status(State(state): State<AppState>) -> Json<ApiResponse<SystemStatus>> {
     let (flows, protocols, ports) = match state.storage.get_latest_snapshot() {
         Ok(data) => data,
@@ -214,6 +227,9 @@ pub struct SystemStatus {
 // 创建 API 路由器
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        // Swagger UI 文档接口
+        .merge(SwaggerUi::new("/swagger-ui")
+            .url("/api-docs/openapi.json", ApiDoc::openapi()))
         // 实时数据接口
         .route("/api/dashboard", get(get_dashboard))
         .route("/api/status", get(get_system_status))
@@ -235,6 +251,11 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 /// 健康检查端点
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "system"
+)]
 pub async fn health_check() -> Json<ApiResponse<HashMap<String, String>>> {
     let mut health = HashMap::new();
     health.insert("status".to_string(), "healthy".to_string());
@@ -362,6 +383,7 @@ pub async fn start_web_server(
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     println!("🚀 Web API 服务器启动在端口 {}", port);
+    println!("📚 访问 http://localhost:{}/swagger-ui 查看 API 文档", port);
     println!(
         "📊 访问 http://localhost:{}/api/dashboard 查看实时数据",
         port
